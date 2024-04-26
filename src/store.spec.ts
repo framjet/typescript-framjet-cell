@@ -9,9 +9,9 @@ import {
   LazyCell,
   PrimitiveCell
 } from '.';
-import { DDomStateCellStore } from './store';
+import { CellStore } from './store';
 
-const createStore = () => new DDomStateCellStore();
+const createStore = () => new CellStore();
 
 it('should not fire on subscribe', async () => {
   const store = createStore();

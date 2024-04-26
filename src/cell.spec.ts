@@ -2,8 +2,8 @@
 import { waitFor } from '@testing-library/dom';
 import { assert, expect, it, vi } from 'vitest';
 import { cell, CellGetter, type FramJetPrimitiveCell } from './cell';
-import { DDomStateCellStore } from './store';
+import { CellStore } from './store';
 
-const createStore = () => new DDomStateCellStore();
+const createStore = () => new CellStore();
 
 it('should ', () => {});

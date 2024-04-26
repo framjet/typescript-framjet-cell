@@ -12,15 +12,9 @@ import type {
   CellState,
   CellWithInitialValue,
   MountedCells,
-  WritableCell,
+  WritableCell
 } from './types';
-import {
-  type AnyCell,
-  type AnyCellValue,
-  type AnyWritableCell,
-  type CellGetter,
-  type CellSetter,
-} from './types';
+import { type AnyCell, type AnyCellValue, type AnyWritableCell, type CellGetter, type CellSetter } from './types';
 
 type PromiseMeta<T> = {
   status?: 'pending' | 'fulfilled' | 'rejected';
@@ -29,7 +23,7 @@ type PromiseMeta<T> = {
   orig?: PromiseLike<T>;
 };
 
-export class DDomStateCellStore {
+export class CellStore {
   static readonly #cancelPromiseMap = new WeakMap<
     Promise<unknown>,
     CancelPromise
@@ -140,7 +134,7 @@ export class DDomStateCellStore {
           : Promise.reject(cellState.error);
 
       if (prevCellState.value !== next) {
-        DDomStateCellStore.#cancelPromise(prevCellState.value, next);
+        CellStore.#cancelPromise(prevCellState.value, next);
       }
     }
   }
@@ -149,12 +143,12 @@ export class DDomStateCellStore {
     cell: Cell<V>,
     value: V,
     nextDependencies?: CellNextDependencies,
-    keepPreviousDependencies?: boolean,
+    keepPreviousDependencies?: boolean
   ): CellState<V> {
     const prevCellState = this.#getCellState(cell);
     const nextCellState: CellState<V> = {
       dependencies: prevCellState?.dependencies || new Map(),
-      value,
+      value
     };
 
     if (nextDependencies !== undefined) {
@@ -162,7 +156,7 @@ export class DDomStateCellStore {
         cell,
         nextCellState,
         nextDependencies,
-        keepPreviousDependencies,
+        keepPreviousDependencies
       );
     }
 
@@ -197,7 +191,7 @@ export class DDomStateCellStore {
     cell: Cell<V>,
     valueOrPromise: V,
     nextDependencies?: CellNextDependencies,
-    abortPromise?: () => void,
+    abortPromise?: () => void
   ): CellState<V> {
     if (this.#isPromiseLike(valueOrPromise)) {
       let continuePromise: (next: Promise<Awaited<V>>) => void;
@@ -214,7 +208,7 @@ export class DDomStateCellStore {
         const nextCellState = this.#setCellValue(
           cell,
           promise as V,
-          nextDependencies,
+          nextDependencies
         );
 
         if (
@@ -224,7 +218,7 @@ export class DDomStateCellStore {
           this.#mountDependencies(
             cell,
             nextCellState,
-            prevCellState.dependencies,
+            prevCellState.dependencies
           );
         }
       };
@@ -235,7 +229,7 @@ export class DDomStateCellStore {
             (v) => {
               if (settled === false) {
                 settled = true;
-                DDomStateCellStore.#resolvePromise(promise, v);
+                CellStore.#resolvePromise(promise, v);
                 resolve(v as Awaited<V>);
                 updatePromiseDependencies();
               }
@@ -243,18 +237,18 @@ export class DDomStateCellStore {
             (e) => {
               if (settled === false) {
                 settled = true;
-                DDomStateCellStore.#rejectPromise(promise, e);
+                CellStore.#rejectPromise(promise, e);
                 reject(e);
                 updatePromiseDependencies();
               }
-            },
+            }
           );
           continuePromise = (next) => {
             if (settled === false) {
               settled = true;
               next.then(
-                (v) => DDomStateCellStore.#resolvePromise(promise, v),
-                (e) => DDomStateCellStore.#rejectPromise(promise, e),
+                (v) => CellStore.#resolvePromise(promise, v),
+                (e) => CellStore.#rejectPromise(promise, e)
               );
 
               resolve(next);
@@ -265,7 +259,7 @@ export class DDomStateCellStore {
       promise.orig = valueOrPromise as PromiseLike<Awaited<V>>;
       promise.status = 'pending';
 
-      DDomStateCellStore.#registerCancelPromise(promise, (next) => {
+      CellStore.#registerCancelPromise(promise, (next) => {
         if (next !== undefined) {
           continuePromise(next as Promise<Awaited<V>>);
         }
@@ -281,12 +275,12 @@ export class DDomStateCellStore {
   #setCellError<V>(
     cell: Cell<V>,
     error: AnyCellError,
-    nextDependencies?: CellNextDependencies,
+    nextDependencies?: CellNextDependencies
   ): CellState<V> {
     const prevCellState = this.#getCellState(cell);
     const nextCellState: CellState<V> = {
       dependencies: prevCellState?.dependencies || new Map(),
-      error,
+      error
     };
 
     if (nextDependencies !== undefined) {
@@ -435,7 +429,7 @@ export class DDomStateCellStore {
         }
 
         return setSelf;
-      },
+      }
     };
 
     try {
@@ -444,7 +438,7 @@ export class DDomStateCellStore {
         cell,
         valueOrPromise,
         nextDependencies,
-        () => controller?.abort(),
+        () => controller?.abort()
       );
     } catch (error) {
       return this.#setCellError(cell, error, nextDependencies);
@@ -585,7 +579,7 @@ export class DDomStateCellStore {
       dependents.forEach(collectPending);
       // FIXME might be better if we can avoid collecting from dependencies
       this.#getCellState(pendingCell)?.dependencies.forEach((_, dep) =>
-        collectPending(dep),
+        collectPending(dep)
       );
     };
 
@@ -635,7 +629,7 @@ export class DDomStateCellStore {
   #mountCell<V>(
     cell: Cell<V>,
     initialDependent?: AnyCell,
-    onMountQueue?: (() => void)[],
+    onMountQueue?: (() => void)[]
   ): CellMountedState {
     const existingMount = this.#mountedMap.get(cell);
     if (existingMount !== undefined) {
@@ -660,7 +654,7 @@ export class DDomStateCellStore {
     // mount self
     const mounted: CellMountedState = {
       dependents: new Set(initialDependent && [initialDependent]),
-      listeners: new Set(),
+      listeners: new Set()
     };
 
     this.#mountedMap.set(cell, mounted);
@@ -689,7 +683,7 @@ export class DDomStateCellStore {
   #mountDependencies<V>(
     cell: Cell<V>,
     cellState: CellState<V>,
-    prevDependencies?: CellDependencies,
+    prevDependencies?: CellDependencies
   ): void {
     const depSet = new Set(cellState.dependencies.keys());
     const maybeUnmountCellSet = new Set<AnyCell>();
@@ -724,10 +718,10 @@ export class DDomStateCellStore {
     cell: Cell<V>,
     nextCellState: CellState<V>,
     nextDependencies: CellNextDependencies,
-    keepPreviousDependencies?: boolean,
+    keepPreviousDependencies?: boolean
   ): void {
     const dependencies: CellDependencies = new Map(
-      keepPreviousDependencies ? nextCellState.dependencies : null,
+      keepPreviousDependencies ? nextCellState.dependencies : null
     );
 
     let changed = false;
@@ -798,7 +792,7 @@ export class DDomStateCellStore {
     if (cellState !== undefined) {
       // cancel promise
       if (this.#hasPromiseCellValue(cellState)) {
-        DDomStateCellStore.#cancelPromise(cellState.value);
+        CellStore.#cancelPromise(cellState.value);
       }
 
       cellState.dependencies.forEach((_, dep) => {
@@ -818,7 +812,7 @@ export class DDomStateCellStore {
 
   #isEqualCellValue<V>(
     left: CellState<V> | undefined,
-    right: CellState<V>,
+    right: CellState<V>
   ): left is CellState<V> {
     return (
       !!left &&
@@ -830,7 +824,7 @@ export class DDomStateCellStore {
 
   #isEqualCellError<V>(
     left: CellState<V> | undefined,
-    right: CellState<V>,
+    right: CellState<V>
   ): left is CellState<V> {
     return (
       !!left &&
@@ -841,14 +835,14 @@ export class DDomStateCellStore {
   }
 
   #hasPromiseCellValue<V>(
-    cell: CellState<V> | undefined,
+    cell: CellState<V> | undefined
   ): cell is CellState<V> & { value: V & Promise<unknown> } {
     return !!cell && 'value' in cell && cell.value instanceof Promise;
   }
 
   #isEqualPromiseCellValue<V>(
     left: CellState<Promise<V> & PromiseMeta<V>>,
-    right: CellState<Promise<V> & PromiseMeta<V>>,
+    right: CellState<Promise<V> & PromiseMeta<V>>
   ) {
     return (
       'value' in left &&
@@ -868,7 +862,7 @@ export class DDomStateCellStore {
   }
 
   #hasInitialValue<T extends Cell<AnyCellValue>>(
-    cell: T,
+    cell: T
   ): cell is T &
     (T extends Cell<infer Value> ? CellWithInitialValue<Value> : never) {
     return cell.hasInitialValue();
@@ -884,21 +878,21 @@ export class DDomStateCellStore {
 
   static #registerCancelPromise(
     promise: Promise<unknown>,
-    cancel: CancelPromise,
+    cancel: CancelPromise
   ) {
-    DDomStateCellStore.#cancelPromiseMap.set(promise, cancel);
+    CellStore.#cancelPromiseMap.set(promise, cancel);
     promise
       .catch(() => {
         // nop
       })
-      .finally(() => DDomStateCellStore.#cancelPromiseMap.delete(promise));
+      .finally(() => CellStore.#cancelPromiseMap.delete(promise));
   }
 
   static #cancelPromise(promise: Promise<unknown>, next?: Promise<unknown>) {
-    const cancel = DDomStateCellStore.#cancelPromiseMap.get(promise);
+    const cancel = CellStore.#cancelPromiseMap.get(promise);
 
     if (cancel !== undefined) {
-      DDomStateCellStore.#cancelPromiseMap.delete(promise);
+      CellStore.#cancelPromiseMap.delete(promise);
       cancel(next);
     }
   }
@@ -910,9 +904,32 @@ export class DDomStateCellStore {
 
   static #rejectPromise<T>(
     promise: Promise<T> & PromiseMeta<T>,
-    reason: AnyCellError,
+    reason: AnyCellError
   ) {
     promise.status = 'rejected';
     promise.reason = reason;
   }
+}
+
+
+let defaultCellStore: CellStore | undefined;
+
+export function getDefaultStore(): CellStore {
+  if (defaultCellStore === undefined) {
+    defaultCellStore = new CellStore('default');
+    if (Debug.isDevOrTest()) {
+      globalThis.__CELL_DEFAULT_STORE__ ||= defaultCellStore;
+      if (globalThis.__CELL_DEFAULT_STORE__ !== defaultCellStore) {
+        console.warn(
+          'Detected multiple FramJet CellStore instances. It may cause unexpected behavior with the default store.'
+        );
+      }
+    }
+  }
+  return defaultCellStore;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __CELL_DEFAULT_STORE__: CellStore | undefined;
 }
