@@ -37,6 +37,19 @@ export type CellOnMount<Args extends unknown[], Result> = <
   setCell: S,
 ) => CellOnUnmount | void;
 
+export type ExtractCellValue<T> =
+  T extends Cell<infer Value> ? Value : never
+
+export type ExtractCellArgs<T> =
+  T extends WritableCell<unknown, infer TArgs, infer _TResult>
+    ? TArgs
+    : never
+
+export type ExtractCellResult<T> =
+  T extends WritableCell<unknown, infer _TArgs, infer TResult>
+    ? TResult
+    : never
+
 export type AnyCellValue = unknown;
 export type AnyCell = Cell<AnyCellValue>;
 export type AnyWritableCell = WritableCell<AnyCellValue, unknown[], unknown>;

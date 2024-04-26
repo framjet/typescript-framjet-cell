@@ -1,7 +1,7 @@
 {
   "name": "@framjet/cell",
   "description": "A powerful and flexible state management library for JavaScript and TypeScript applications, providing a reactive and composable way to manage state using cells and a robust store implementation.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "author": "Aurimas Niekis <aurimas@niekis.lt>",
   "homepage": "https://github.com/framjet/typescript-framjet-cell#readme",
