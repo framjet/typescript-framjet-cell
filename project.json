@@ -1,0 +1,37 @@
+{
+  "name": "framjet-cell",
+  "$schema": "node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/rollup:rollup",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/framjet-cell",
+        "main": "./src/index.ts",
+        "format": ["esm", "cjs"],
+        "compiler": "tsc",
+        "importPath": "@framjet/cell",
+        "tsConfig": "./tsconfig.lib.json",
+        "generateExportsField": true,
+        "assets": [
+          {  "glob": "README.md", "input": ".", "output": "." },
+          {  "glob": "LICENSE", "input": ".", "output": "." },
+          {  "glob": "*.md", "input": ".", "output": "." }
+        ]
+      }
+    },
+    "lint": {
+      "command": "eslint ./src ./package.json"
+    },
+    "test": {
+      "executor": "@nx/vite:test",
+      "outputs": ["{options.reportsDirectory}"],
+      "options": {
+        "reportsDirectory": "coverage/framjet-cell"
+      }
+    }
+  }
+}
