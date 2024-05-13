@@ -1,13 +1,13 @@
-import { Debug } from '@framjet/common';
 import { BasePrimitiveCell } from './base-primitive-cell';
-import type {
-  AnyCellValue,
-  Cell,
-  CellGetter,
-  CellGetterOptions,
-  CellSetter,
-  SetCell,
-  SetCellAction
+import {
+  type AnyCellValue,
+  type Cell,
+  type CellGetter,
+  type CellGetterOptions,
+  type CellSetter,
+  isDev,
+  type SetCell,
+  type SetCellAction
 } from '..';
 import { cell } from '../cell';
 import { CellIsNotWritableError } from '../errors';
@@ -122,7 +122,7 @@ export abstract class BaseEffectCell<T> extends BasePrimitiveCell<T> {
     };
     setter.recurse = (anCell, ...args) => {
       if (ref.fromCleanUp) {
-        if (Debug.isDevOrTest() === true) {
+        if (isDev() === true) {
           console.warn('Cannot recurse inside cleanup');
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

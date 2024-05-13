@@ -22,6 +22,8 @@ export interface Cell<Value> {
 
   is(cell: AnyCell): boolean;
 
+  rename(name: string): this;
+
   name: string;
 }
 

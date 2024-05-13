@@ -1,9 +1,9 @@
-import type {
-  AnyCell,
-  Cell,
-  CellGetter,
-  CellGetterOptions,
-  CellSetter,
+import {
+  type AnyCell, cell,
+  type Cell,
+  type CellGetter,
+  type CellGetterOptions,
+  type CellSetter
 } from '..';
 
 export abstract class BaseCell<Value> implements Cell<Value> {
@@ -40,6 +40,12 @@ export abstract class BaseCell<Value> implements Cell<Value> {
 
   is(cell: AnyCell): boolean {
     return this === cell;
+  }
+
+  rename(name: string): this {
+    this.name = name;
+
+    return this;
   }
 
   get [Symbol.toStringTag]() {

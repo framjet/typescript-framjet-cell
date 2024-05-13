@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Debug } from '@framjet/common';
 import { CellIsNotWritableError } from './errors';
 import type {
   AnyCellError,
   CancelPromise,
   Cell,
+  CellDebugListener,
+  CellDebugListeners,
   CellDependencies,
   CellDependents,
   CellMountedState,
@@ -15,6 +16,8 @@ import type {
   WritableCell
 } from './types';
 import { type AnyCell, type AnyCellValue, type AnyWritableCell, type CellGetter, type CellSetter } from './types';
+import { isDev, tagObject } from './utils';
+import { BaseCell } from './cells';
 
 type PromiseMeta<T> = {
   status?: 'pending' | 'fulfilled' | 'rejected';
@@ -38,12 +41,14 @@ export class CellStore {
     [prevCellState: CellState | undefined, dependents: CellDependents]
   >();
   #mountedCells: MountedCells | undefined;
+  #debugListeners: CellDebugListeners | undefined;
 
   constructor(name?: string) {
     this.#name = name;
 
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       this.#mountedCells = new Set<AnyCell>();
+      this.#debugListeners = new Set<CellDebugListener>();
     }
   }
 
@@ -51,36 +56,51 @@ export class CellStore {
     cell: WritableCell<V, Args, Result>,
     ...args: Args
   ) {
+    this.#verifyCellInput(cell);
+
     this.#pendingStack.push(new Set([cell]));
     const result = this.#writeCellState(cell, ...args);
     const flushed = this.#flushPending(this.#pendingStack.pop()!);
-    if (Debug.isDevOrTest()) {
-      // nop
+    if (isDev()) {
+      this.#debugListeners?.forEach(l => l.onAction({
+        type: 'write',
+        to: cell,
+        flushed: flushed as never
+      }));
     }
 
     return result;
   }
 
   readCell<V>(cell: Cell<V>): V {
+    this.#verifyCellInput(cell);
+
     const cellState = this.#readCellState(cell);
 
     return this.#returnCellValue(cellState);
   }
 
   subscribeCell(cell: AnyCell, listener: () => void): () => void {
+    this.#verifyCellInput(cell);
+
     const mounted = this.#mountCell(cell);
     const flushed = this.#flushPending([cell]);
     const listeners = mounted.listeners;
     listeners.add(listener);
-    if (Debug.isDevOrTest()) {
-      // on sub
+    if (isDev()) {
+      this.#debugListeners.forEach(l => l.onAction({
+        type: 'sub',
+        flushed: flushed as never
+      }));
     }
     return () => {
       listeners.delete(listener);
       this.#tryUnmountCell(cell, mounted);
 
-      if (Debug.isDevOrTest()) {
-        // on unsub
+      if (isDev()) {
+        this.#debugListeners.forEach(l => l.onAction({
+          type: 'unsub'
+        }));
       }
     };
   }
@@ -98,7 +118,7 @@ export class CellStore {
   }
 
   _devGetMountedCells() {
-    if (Debug.isDevOrTest() === false) {
+    if (isDev() === false) {
       console.warn('This method only available in dev mode');
 
       return undefined as unknown as IterableIterator<AnyCell>;
@@ -107,12 +127,50 @@ export class CellStore {
     return this.#mountedCells!.values();
   }
 
+  _devGetMountedCell(cell: AnyCell) {
+    if (isDev() === false) {
+      console.warn('This method only available in dev mode');
+
+      return undefined as unknown as IterableIterator<AnyCell>;
+    }
+
+    this.#verifyCellInput(cell);
+
+    return this.#mountedMap.get(cell);
+  }
+
+  _devGetCellState(cell: AnyCell) {
+    if (isDev() === false) {
+      console.warn('This method only available in dev mode');
+
+      return undefined as unknown as IterableIterator<AnyCell>;
+    }
+
+    this.#verifyCellInput(cell);
+
+    return this.#cellStateMap.get(cell);
+  }
+
+  _devSubscribeStoreActions(debugListener: CellDebugListener): () => void {
+    if (isDev() === false) {
+      console.warn('This method only available in dev mode');
+
+      return;
+    }
+
+    this.#debugListeners?.add(debugListener);
+
+    return () => {
+      this.#debugListeners.delete(debugListener);
+    };
+  }
+
   #getCellState<V>(cell: Cell<V>) {
     return this.#cellStateMap.get(cell) as CellState<V> | undefined;
   }
 
   #setCellState<V>(cell: Cell<V>, cellState: CellState<V>): void {
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       Object.freeze(cellState);
     }
 
@@ -336,6 +394,8 @@ export class CellStore {
     let isSync = true;
 
     const getter = <V>(dep: Cell<V>): V => {
+      this.#verifyCellInput(dep);
+
       if (cell.is(dep)) {
         const depState = this.#getCellState(dep);
         if (depState !== undefined) {
@@ -351,11 +411,26 @@ export class CellStore {
         }
 
         // NOTE invalid derived cells can reach here
-        throw new Error('no DDomStateCell init');
+        throw new Error('no Cell init');
       }
       // dep !== cell
       const depState = this.#readCellState(dep);
       nextDependencies.set(dep, depState);
+
+      if (isDev() && isSync === false) {
+        console.warn(`CellStore<${this.name}>: Warning: The cell "${dep}" ` +
+          `is accessed after the read method of "${cell}" has completed. ` +
+          `Changes to "${dep}" will not trigger updates in "${cell}" ` +
+          `because it's not subscribed to "${dep}" at this point.`);
+      }
+
+      if (isDev()) {
+        this.#debugListeners?.forEach(l => l.onAction({
+          type: 'dep',
+          from: cell,
+          to: dep
+        }));
+      }
 
       return this.#returnCellValue(depState);
     };
@@ -364,6 +439,8 @@ export class CellStore {
       dep: WritableCell<V, Args, R>,
       ...args: Args
     ): R => {
+      this.#verifyCellInput(dep);
+
       const isSync = this.#pendingStack.length > 0;
       if (isSync === false) {
         this.#pendingStack.push(new Set([dep]));
@@ -372,7 +449,7 @@ export class CellStore {
       if (cell.is(dep)) {
         if (dep.hasInitialValue() === false) {
           // NOTE technically possible but restricted as it may cause bugs
-          throw new Error('DDomStateCell not writable');
+          throw new Error('Cell not writable');
         }
 
         const prevCellState = this.#getCellState(dep);
@@ -386,8 +463,11 @@ export class CellStore {
 
       if (isSync === false) {
         const flushed = this.#flushPending(this.#pendingStack.pop()!);
-        if (Debug.isDevOrTest()) {
-          // dev-listeners
+        if (isDev()) {
+          this.#debugListeners?.forEach(l => l.onAction({
+            type: 'write.async',
+            flushed: flushed as never
+          }));
         }
       }
 
@@ -409,14 +489,14 @@ export class CellStore {
       },
       get setSelf() {
         if (
-          Debug.isDevOrTest() &&
+          isDev() &&
           self.#isActuallyWritableCell(cell) === false
         ) {
           console.warn('setSelf function cannot be used with read-only cells');
         }
         if (setSelf === undefined && self.#isActuallyWritableCell(cell)) {
           setSelf = (...args) => {
-            if (Debug.isDevOrTest() && isSync === true) {
+            if (isDev() && isSync === true) {
               console.warn('setSelf function cannot bet called in sync');
             }
 
@@ -433,7 +513,14 @@ export class CellStore {
     };
 
     try {
-      const valueOrPromise = cell.read(getter, setter, options as never);
+      const g = tagObject(getter, `${cell}.read.getter`);
+      const s = tagObject(setter, `${cell}.read.setter`);
+
+      const valueOrPromise = cell.read(
+        g,
+        s,
+        options as never
+      );
       return this.#setCellValueOrPromise(
         cell,
         valueOrPromise,
@@ -455,12 +542,18 @@ export class CellStore {
       throw new CellIsNotWritableError(cell);
     }
 
-    const getter: CellGetter = <V>(dep: Cell<V>) =>
-      this.#returnCellValue(this.#readCellState(dep));
+    const getter: CellGetter = <V>(dep: Cell<V>) => {
+      this.#verifyCellInput(dep);
+      return this.#returnCellValue(
+        this.#readCellState(dep)
+      );
+    };
     const setter: CellSetter = <V, Args extends unknown[], R>(
       dep: WritableCell<V, Args, R>,
       ...args: Args
     ): R => {
+      this.#verifyCellInput(dep);
+
       const isSync = this.#pendingStack.length > 0;
       if (isSync === false) {
         this.#pendingStack.push(new Set([dep]));
@@ -469,7 +562,7 @@ export class CellStore {
       if (cell.is(dep)) {
         if (dep.hasInitialValue() === false) {
           // NOTE technically possible but restricted as it may cause bugs
-          throw new Error('DDomStateCell not writable');
+          throw new Error('Cell not writable');
         }
 
         const prevCellState = this.#getCellState(dep);
@@ -483,15 +576,24 @@ export class CellStore {
 
       if (isSync === false) {
         const flushed = this.#flushPending(this.#pendingStack.pop()!);
-        if (Debug.isDevOrTest()) {
-          // dev-listeners
+        if (isDev()) {
+          this.#debugListeners?.forEach(l => l.onAction({
+            type: 'write.async',
+            flushed: flushed as never
+          }));
         }
       }
 
       return result as R;
     };
 
-    return cell.write(getter, setter, ...args);
+    const g = tagObject(getter, `${cell}.write.getter`);
+    const s = tagObject(setter, `${cell}.write.setter`);
+
+    return cell.write(
+      g,
+      s,
+      ...args);
   }
 
   #recomputeDependents<V>(cell: Cell<V>) {
@@ -563,7 +665,7 @@ export class CellStore {
 
   #flushPending(pendingCells: AnyCell[] | Set<AnyCell>): void | Set<AnyCell> {
     let flushed: Set<AnyCell>;
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       flushed = new Set();
     }
 
@@ -587,8 +689,8 @@ export class CellStore {
     pending.forEach(([cell, prevCellState]) => {
       const cellState = this.#getCellState(cell);
       if (cellState === undefined) {
-        if (Debug.isDevOrTest()) {
-          console.warn('[Bug] no DDomStateCell state to flush');
+        if (isDev()) {
+          console.warn('[Bug] no Cell state to flush');
         }
 
         return;
@@ -615,13 +717,13 @@ export class CellStore {
           mounted.listeners.forEach((listener) => {
             listener();
           });
-          if (Debug.isDevOrTest()) {
+          if (isDev()) {
             flushed.add(cell);
           }
         }
       }
     });
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       return flushed;
     }
   }
@@ -631,6 +733,14 @@ export class CellStore {
     initialDependent?: AnyCell,
     onMountQueue?: (() => void)[]
   ): CellMountedState {
+    if (isDev()) {
+      this.#debugListeners?.forEach(l => l.onAction({
+        type: 'mount',
+        cell,
+        dependent: initialDependent
+      }));
+    }
+
     const existingMount = this.#mountedMap.get(cell);
     if (existingMount !== undefined) {
       if (initialDependent !== undefined) {
@@ -658,7 +768,7 @@ export class CellStore {
     };
 
     this.#mountedMap.set(cell, mounted);
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       this.#mountedCells?.add(cell);
     }
 
@@ -735,8 +845,8 @@ export class CellStore {
         if (nextCellState.dependencies.get(dep) !== depState) {
           changed = true;
         }
-      } else if (Debug.isDevOrTest()) {
-        console.warn('[Bug] DDomStateCell state not found');
+      } else if (isDev()) {
+        console.warn('[Bug] Cell state not found');
       }
     });
 
@@ -783,7 +893,7 @@ export class CellStore {
     }
 
     this.#mountedMap.delete(cell);
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       this.#mountedCells?.delete(cell);
     }
 
@@ -805,8 +915,8 @@ export class CellStore {
           }
         }
       });
-    } else if (Debug.isDevOrTest()) {
-      console.warn('[Byg] could not find DDomStateCell state to unmount', cell);
+    } else if (isDev()) {
+      console.warn('[Byg] could not find Cell state to unmount', cell);
     }
   }
 
@@ -876,6 +986,12 @@ export class CellStore {
     return cellState.value;
   }
 
+  #verifyCellInput(value: unknown) {
+    if (!(value instanceof BaseCell)) {
+      throw new Error(`CellStore: Invalid cell provided to the store "${typeof value}"`);
+    }
+  }
+
   static #registerCancelPromise(
     promise: Promise<unknown>,
     cancel: CancelPromise
@@ -917,7 +1033,7 @@ let defaultCellStore: CellStore | undefined;
 export function getDefaultStore(): CellStore {
   if (defaultCellStore === undefined) {
     defaultCellStore = new CellStore('default');
-    if (Debug.isDevOrTest()) {
+    if (isDev()) {
       globalThis.__CELL_DEFAULT_STORE__ ||= defaultCellStore;
       if (globalThis.__CELL_DEFAULT_STORE__ !== defaultCellStore) {
         console.warn(

@@ -16,6 +16,8 @@
         "importPath": "@framjet/cell",
         "tsConfig": "./tsconfig.lib.json",
         "generateExportsField": true,
+        "external": "all",
+        "typeCheck": false,
         "assets": [
           {  "glob": "README.md", "input": ".", "output": "." },
           {  "glob": "LICENSE", "input": ".", "output": "." },
